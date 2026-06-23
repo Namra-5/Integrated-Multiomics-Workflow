@@ -1,49 +1,85 @@
-# History files
+# =============================================================
+# GENOMICS PROJECT — .gitignore
+# =============================================================
+
+# ----- LARGE RAW DATA FILES (NEVER commit these) -----
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.bam
+*.sam
+*.cram
+
+# STAR / HISAT2 genome index folders
+GenomeIndex/
+StarIndex/
+reference/genome/
+reference/annotation/
+
+# ----- INTERMEDIATE / SCRATCH FILES -----
+data/raw/
+data/trimmed/*.fastq.gz
+data/trimmed/*.fq.gz
+
+# Keep trimming REPORTS (small .txt), ignore the actual trimmed reads
+!data/trimmed/*.txt
+
+# BAM index files (large, regenerable)
+*.bam.bai
+*.bai
+
+# Compressed peak files (large)
+*.bed.gz
+*.narrowPeak.gz
+*.broadPeak.gz
+
+# PLINK binary files (large)
+*.bed
+*.bim
+*.fam
+*.ped
+*.map
+
+# VCF / genotype files (large)
+*.vcf
+*.vcf.gz
+*.bcf
+
+# ----- R / RSTUDIO ARTEFACTS -----
 .Rhistory
-.Rapp.history
-
-# Session Data files
 .RData
-.RDataTmp
-
-# User-specific files
-.Ruserdata
-
-# Example code in package build process
-*-Ex.R
-
-# Output files from R CMD build
-/*.tar.gz
-
-# Output files from R CMD check
-/*.Rcheck/
-
-# RStudio files
 .Rproj.user/
+*.Rproj
 
-# produced vignettes
-vignettes/*.html
-vignettes/*.pdf
+# ----- PYTHON ARTEFACTS -----
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+*.egg-info/
+.env
+venv/
 
-# OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
-.httr-oauth
+# ----- OS / EDITOR JUNK -----
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
 
-# knitr and R markdown default cache directories
-*_cache/
-/cache/
+# ----- LOG / TEMP FILES -----
+*.log
+*.tmp
+*.temp
+nohup.out
 
-# Temporary files created by R markdown
-*.utf8.md
-*.knit.md
-
-# R Environment Variables
-.Renviron
-
-# pkgdown site
-docs/
-
-# translation temp files
-po/*~
-
-# RStudio Connect folder
-rsconnect/
+# ----- WHAT WE *DO* KEEP (whitelist) -----
+# Scripts:        *.R, *.Rmd, *.sh, *.py
+# Small outputs:  *.csv, *.txt (count matrices, DEG tables, enrichment tables)
+# Plots:          *.png, *.pdf, *.svg
+# HTML reports:   *.html
+# Excel summaries: *.xlsx  (Task 4 interaction table — small)
+# Docs:           *.pdf (project report), README.md
