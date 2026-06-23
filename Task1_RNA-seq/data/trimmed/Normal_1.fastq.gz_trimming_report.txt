@@ -1,0 +1,157 @@
+
+SUMMARISING RUN PARAMETERS
+==========================
+Input filename: ./raw_data/Normal_1.fastq.gz
+Trimming mode: single-end
+Trim Galore version: 0.6.10
+Cutadapt version: 5.2
+Python version: could not detect
+Number of cores used for trimming: 4
+Quality Phred score cutoff: 20
+Quality encoding type selected: ASCII+33
+Using Nextera adapter for trimming (count: 29613). Second best hit was smallRNA (count: 2)
+Adapter sequence: 'CTGTCTCTTATA' (Nextera Transposase sequence; auto-detected)
+Maximum trimming error rate: 0.1 (default)
+Minimum required adapter overlap (stringency): 1 bp
+Minimum required sequence length before a sequence gets removed: 36 bp
+Output file will be GZIP compressed
+
+
+This is cutadapt 5.2 with Python 3.10.19
+Command line parameters: -j 4 -e 0.1 -q 20 -O 1 -a CTGTCTCTTATA ./raw_data/Normal_1.fastq.gz
+Processing single-end reads on 4 cores ...
+
+=== Summary ===
+
+Total reads processed:              23,545,561
+Reads with adapters:                 9,376,404 (39.8%)
+Reads written (passing filters):    23,545,561 (100.0%)
+
+Total basepairs processed: 2,378,101,661 bp
+Quality-trimmed:               2,186,564 bp (0.1%)
+Total written (filtered):  2,338,624,268 bp (98.3%)
+
+=== Adapter 1 ===
+
+Sequence: CTGTCTCTTATA; Type: regular 3'; Length: 12; Trimmed: 9376404 times
+
+Minimum overlap: 1
+No. of allowed errors:
+1-9 bp: 0; 10-12 bp: 1
+
+Bases preceding removed adapters:
+  A: 18.2%
+  C: 30.9%
+  G: 27.3%
+  T: 23.5%
+  none/other: 0.0%
+
+Overview of removed sequences
+length	count	expect	max.err	error counts
+1	5948202	5886390.2	0	5948202
+2	1719107	1471597.6	0	1719107
+3	627601	367899.4	0	627601
+4	141959	91974.8	0	141959
+5	60654	22993.7	0	60654
+6	34777	5748.4	0	34777
+7	28705	1437.1	0	28705
+8	25669	359.3	0	25669
+9	23869	89.8	0	23319 550
+10	25406	22.5	1	24140 1266
+11	23354	5.6	1	22600 754
+12	23292	1.4	1	22622 670
+13	21516	1.4	1	21016 500
+14	21615	1.4	1	21055 560
+15	20107	1.4	1	19638 469
+16	22217	1.4	1	21497 720
+17	17564	1.4	1	17178 386
+18	19045	1.4	1	18581 464
+19	18670	1.4	1	18231 439
+20	19427	1.4	1	18958 469
+21	19032	1.4	1	18547 485
+22	17675	1.4	1	17283 392
+23	17875	1.4	1	17356 519
+24	16576	1.4	1	16242 334
+25	16101	1.4	1	15691 410
+26	15899	1.4	1	15460 439
+27	14842	1.4	1	14503 339
+28	15347	1.4	1	14924 423
+29	15424	1.4	1	14977 447
+30	14580	1.4	1	14279 301
+31	15424	1.4	1	14957 467
+32	13383	1.4	1	13128 255
+33	13904	1.4	1	13529 375
+34	13426	1.4	1	13062 364
+35	13219	1.4	1	12888 331
+36	12133	1.4	1	11789 344
+37	12599	1.4	1	12232 367
+38	12012	1.4	1	11716 296
+39	12123	1.4	1	11752 371
+40	10996	1.4	1	10779 217
+41	12023	1.4	1	11676 347
+42	11832	1.4	1	11491 341
+43	11397	1.4	1	11122 275
+44	11443	1.4	1	11125 318
+45	11882	1.4	1	11506 376
+46	10258	1.4	1	9980 278
+47	20763	1.4	1	20256 507
+48	2274	1.4	1	2134 140
+49	9097	1.4	1	8846 251
+50	52916	1.4	1	52209 707
+51	8602	1.4	1	8320 282
+52	2472	1.4	1	2293 179
+53	16603	1.4	1	16293 310
+54	6727	1.4	1	6463 264
+55	1701	1.4	1	1561 140
+56	9716	1.4	1	9489 227
+57	13500	1.4	1	13260 240
+58	2237	1.4	1	2114 123
+59	1291	1.4	1	1188 103
+60	843	1.4	1	748 95
+61	5512	1.4	1	5379 133
+62	392	1.4	1	296 96
+63	755	1.4	1	635 120
+64	6540	1.4	1	6359 181
+65	667	1.4	1	566 101
+66	367	1.4	1	276 91
+67	1291	1.4	1	1210 81
+68	2146	1.4	1	1999 147
+69	224	1.4	1	149 75
+70	1066	1.4	1	951 115
+71	1037	1.4	1	951 86
+72	547	1.4	1	462 85
+73	167	1.4	1	24 143
+74	132	1.4	1	17 115
+75	251	1.4	1	20 231
+76	114	1.4	1	16 98
+77	101	1.4	1	14 87
+78	147	1.4	1	17 130
+79	106	1.4	1	11 95
+80	113	1.4	1	13 100
+81	66	1.4	1	6 60
+82	74	1.4	1	7 67
+83	127	1.4	1	3 124
+84	60	1.4	1	5 55
+85	149	1.4	1	3 146
+86	72	1.4	1	6 66
+87	94	1.4	1	5 89
+88	128	1.4	1	2 126
+89	58	1.4	1	2 56
+90	51	1.4	1	0 51
+91	135	1.4	1	2 133
+92	109	1.4	1	3 106
+93	244	1.4	1	4 240
+94	41	1.4	1	0 41
+95	70	1.4	1	3 67
+96	32	1.4	1	0 32
+97	65	1.4	1	1 64
+98	131	1.4	1	2 129
+99	59	1.4	1	0 59
+100	38	1.4	1	0 38
+101	23	1.4	1	0 23
+
+RUN STATISTICS FOR INPUT FILE: ./raw_data/Normal_1.fastq.gz
+=============================================
+23545561 sequences processed in total
+Sequences removed because they became shorter than the length cutoff of 36 bp:	20830 (0.1%)
+

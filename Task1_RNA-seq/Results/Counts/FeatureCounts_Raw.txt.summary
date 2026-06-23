@@ -1,0 +1,15 @@
+Status	/content/rnaseq_project/Results/Alignments/Normal_1_sorted.bam	/content/rnaseq_project/Results/Alignments/Normal_2_sorted.bam	/content/rnaseq_project/Results/Alignments/Normal_3_sorted.bam	/content/rnaseq_project/Results/Alignments/Normal_4_sorted.bam	/content/rnaseq_project/Results/Alignments/Normal_5_sorted.bam	/content/rnaseq_project/Results/Alignments/COVID_1_sorted.bam	/content/rnaseq_project/Results/Alignments/COVID_2_sorted.bam	/content/rnaseq_project/Results/Alignments/COVID_3_sorted.bam	/content/rnaseq_project/Results/Alignments/COVID_4_sorted.bam	/content/rnaseq_project/Results/Alignments/COVID_5_sorted.bam
+Assigned	9361437	9648853	8576610	8958371	10692321	7535230	10369349	7329262	7736322	8517750
+Unassigned_Unmapped	1265923	1378595	1230892	1300541	1344106	1688262	2368848	1611850	1607027	1594021
+Unassigned_Read_Type	0	0	0	0	0	0	0	0	0	0
+Unassigned_Singleton	0	0	0	0	0	0	0	0	0	0
+Unassigned_MappingQuality	0	0	0	0	0	0	0	0	0	0
+Unassigned_Chimera	0	0	0	0	0	0	0	0	0	0
+Unassigned_FragmentLength	0	0	0	0	0	0	0	0	0	0
+Unassigned_Duplicate	0	0	0	0	0	0	0	0	0	0
+Unassigned_MultiMapping	5842321	5828876	4851472	6105382	5576160	4418092	6274777	4367043	3899448	3887716
+Unassigned_Secondary	0	0	0	0	0	0	0	0	0	0
+Unassigned_NonSplit	0	0	0	0	0	0	0	0	0	0
+Unassigned_NoFeatures	10925675	11408023	10029910	10977797	12184906	9248604	11999537	8582711	9509216	9895474
+Unassigned_Overlapping_Length	0	0	0	0	0	0	0	0	0	0
+Unassigned_Ambiguity	474228	485772	421304	459362	535407	381087	584799	402941	412127	504451
