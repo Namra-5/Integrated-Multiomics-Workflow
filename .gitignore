@@ -25,10 +25,6 @@ data/trimmed/*.fq.gz
 # Keep trimming REPORTS (small .txt), ignore the actual trimmed reads
 !data/trimmed/*.txt
 
-# BAM index files (large, regenerable)
-*.bam.bai
-*.bai
-
 # Compressed peak files (large)
 *.bed.gz
 *.narrowPeak.gz
@@ -70,8 +66,7 @@ desktop.ini
 .idea/
 .vscode/
 
-# ----- LOG / TEMP FILES -----
-*.log
+# ----- LTEMP FILES -----
 *.tmp
 *.temp
 nohup.out
