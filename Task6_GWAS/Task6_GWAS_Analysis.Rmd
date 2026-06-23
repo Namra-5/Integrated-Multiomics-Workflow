@@ -1,0 +1,420 @@
+---
+title: "Task 6: Genome-Wide Association Study (GWAS) Analysis"
+subtitle: "Severe COVID-19 with Respiratory Failure — Ellinghaus et al. 2020"
+author: "ghania | 460673"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    highlight: tango
+    df_print: paged
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width  = 12,
+  fig.height = 7,
+  dpi        = 150
+)
+```
+
+---
+
+# 1. Dataset Source and Description
+
+| Field               | Details |
+|---------------------|---------|
+| **GWAS Catalog ID** | GCST90000255 |
+| **Study**           | Ellinghaus D et al. (2020), *N Engl J Med* |
+| **Title**           | Genomewide Association Study of Severe Covid-19 with Respiratory Failure |
+| **Trait**           | Severe COVID-19 infection with respiratory failure (Analysis I) |
+| **Population**      | 3,815 European ancestry individuals |
+| **Genome Build**    | GRCh38 |
+| **File**            | `GCST90000255_GRCh38.tsv.gz` |
+| **Source**          | NHGRI-EBI GWAS Catalog |
+
+---
+
+# 2. Load Required Packages
+
+```{r load-packages}
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(scales)
+library(RColorBrewer)
+library(knitr)
+```
+
+---
+
+# 3. Load Data
+
+```{r load-data}
+gwas_file <- "GCST90000255_GRCh38.tsv.gz"
+
+cat("Reading GWAS summary statistics...\n")
+gwas_raw <- fread(gwas_file, sep = "\t", header = TRUE)
+
+cat("Dimensions:", nrow(gwas_raw), "rows x", ncol(gwas_raw), "columns\n")
+cat("Original column names:", paste(names(gwas_raw), collapse = ", "), "\n")
+
+head(gwas_raw, 3)
+```
+
+---
+
+# 4. Preprocessing
+
+```{r preprocess}
+# Rename columns directly using known original names
+gwas <- gwas_raw
+names(gwas) <- c("CHR", "BP", "SNP", "EA", "NEA", "BETA", "SE", "P")
+
+# Convert types and filter to autosomes with valid p-values
+gwas <- gwas %>%
+  mutate(
+    CHR  = as.integer(CHR),
+    BP   = as.integer(BP),
+    P    = as.numeric(P),
+    MAF  = NA_real_
+  ) %>%
+  filter(
+    !is.na(CHR), !is.na(BP), !is.na(P),
+    CHR %in% 1:22,
+    P > 0, P <= 1
+  ) %>%
+  mutate(
+    NEGLOG10P   = -log10(P),
+    SIGNIFICANT = P < 5e-8
+  )
+
+cat("SNPs after QC filters:", nrow(gwas), "\n")
+cat("Genome-wide significant SNPs (P < 5e-8):", sum(gwas$SIGNIFICANT), "\n")
+cat("Suggestive significant SNPs (P < 1e-5):",  sum(gwas$P < 1e-5), "\n")
+
+# Save raw SNP count before freeing RAM (used in QC table below)
+n_raw_snps <- nrow(gwas_raw)
+
+# Free RAM — gwas_raw no longer needed
+rm(gwas_raw)
+gc()
+```
+
+---
+
+# 5. Quality Control Summary
+
+```{r qc-table}
+qc_df <- data.frame(
+  Step  = c("Raw SNPs loaded",
+            "After autosome + valid P filter",
+            "Genome-wide significant (P < 5e-8)",
+            "Suggestive significant (P < 1e-5)"),
+  Count = c(n_raw_snps,
+            nrow(gwas),
+            sum(gwas$SIGNIFICANT),
+            sum(gwas$P < 1e-5))
+)
+knitr::kable(qc_df, caption = "QC Step Summary")
+```
+
+---
+
+# 6. Principal Component Analysis (PCA)
+
+> **Note:** Standard GWAS PCA requires individual-level genotype data to detect
+> population stratification. Since GCST90000255 provides only summary statistics,
+> we perform a statistics-level PCA on SNP features (log10P, BETA, SE) to
+> illustrate the PCA concept in R. The original Ellinghaus et al. study performed
+> genotype PCA and confirmed European ancestry homogeneity before association testing.
+
+```{r pca}
+set.seed(42)
+
+pca_input <- gwas %>%
+  select(CHR, NEGLOG10P, BETA, SE) %>%
+  filter(complete.cases(.)) %>%
+  slice_sample(n = min(50000, nrow(.)))
+
+pca_mat    <- scale(pca_input %>% select(-CHR))
+pca_result <- prcomp(pca_mat, center = FALSE, scale. = FALSE)
+
+pca_df <- as.data.frame(pca_result$x[, 1:3]) %>%
+  mutate(CHR = factor(pca_input$CHR))
+
+var_explained <- round(100 * pca_result$sdev^2 / sum(pca_result$sdev^2), 2)
+
+cat("Variance explained — PC1:", var_explained[1], "%  PC2:", var_explained[2], "%\n")
+```
+
+```{r pca-plot, fig.cap="PCA of SNP-level statistics coloured by chromosome"}
+ggplot(pca_df, aes(x = PC1, y = PC2, colour = CHR)) +
+  geom_point(alpha = 0.4, size = 0.7) +
+  scale_colour_manual(
+    values = rep(c("#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd",
+                   "#8c564b","#e377c2","#7f7f7f","#bcbd22","#17becf",
+                   "#aec7e8","#ffbb78"), length.out = 22)
+  ) +
+  labs(
+    title    = "PCA of GWAS Summary Statistics",
+    subtitle = paste0("PC1: ", var_explained[1], "%  |  PC2: ", var_explained[2], "% variance explained"),
+    x        = paste0("PC1 (", var_explained[1], "%)"),
+    y        = paste0("PC2 (", var_explained[2], "%)"),
+    colour   = "Chromosome",
+    caption  = "Based on -log10(P), BETA, SE for a random sample of 50,000 SNPs"
+  ) +
+  theme_bw(base_size = 13) +
+  theme(legend.key.size = unit(0.4, "cm"),
+        legend.text     = element_text(size = 7))
+
+ggsave("PCA_Plot.png", width = 12, height = 7, dpi = 200)
+cat("Saved: PCA_Plot.png\n")
+```
+
+```{r scree-plot, fig.width=7, fig.height=5, fig.cap="Scree plot — variance explained per PC"}
+scree_df <- data.frame(
+  PC  = 1:min(10, length(var_explained)),
+  Var = var_explained[1:min(10, length(var_explained))]
+)
+
+ggplot(scree_df, aes(x = PC, y = Var)) +
+  geom_col(fill = "#2c7bb6", colour = "white") +
+  geom_line(colour = "red", linewidth = 0.8) +
+  geom_point(colour = "red", size = 2.5) +
+  scale_x_continuous(breaks = scree_df$PC) +
+  labs(title = "Scree Plot — Variance Explained by Each PC",
+       x = "Principal Component", y = "Variance Explained (%)") +
+  theme_bw(base_size = 13)
+```
+
+---
+
+# 7. Manhattan Plot
+
+```{r manhattan-prep}
+# Thin data to reduce RAM — keep all significant SNPs + P < 0.05 subset
+gwas <- gwas %>% filter(P < 0.05 | SIGNIFICANT)
+
+# Compute cumulative base-pair positions per chromosome
+chr_lengths <- gwas %>%
+  group_by(CHR) %>%
+  summarise(chr_len = max(BP), .groups = "drop") %>%
+  arrange(CHR) %>%
+  mutate(tot = lag(cumsum(chr_len), default = 0))
+
+gwas_plot <- gwas %>%
+  left_join(chr_lengths, by = "CHR") %>%
+  mutate(BPcum = BP + tot)
+
+# X-axis tick at midpoint of each chromosome
+axisdf <- gwas_plot %>%
+  group_by(CHR) %>%
+  summarise(centre = mean(BPcum), .groups = "drop")
+
+# Lead SNP per chromosome for labelling
+sig_snps <- gwas_plot %>%
+  filter(SIGNIFICANT) %>%
+  group_by(CHR) %>%
+  slice_min(P, n = 1) %>%
+  ungroup()
+
+cat("Significant loci to label:", nrow(sig_snps), "\n")
+```
+
+```{r manhattan-plot, fig.width=14, fig.height=6, fig.cap="Manhattan plot — Severe COVID-19 GWAS"}
+chr_colours <- rep(c("#2c7bb6", "#abd9e9"), 11)
+
+p_manhattan <- ggplot(gwas_plot,
+                      aes(x = BPcum, y = NEGLOG10P, colour = factor(CHR))) +
+  geom_point(alpha = 0.5, size = 0.6) +
+  geom_point(data = gwas_plot %>% filter(SIGNIFICANT),
+             colour = "#d73027", size = 1.8, alpha = 0.9) +
+  geom_hline(yintercept = -log10(5e-8), linetype = "dashed",
+             colour = "red", linewidth = 0.7) +
+  geom_hline(yintercept = -log10(1e-5), linetype = "dotted",
+             colour = "blue", linewidth = 0.5) +
+  geom_label_repel(
+    data           = sig_snps,
+    aes(label      = SNP),
+    colour         = "black",
+    fill           = "white",
+    size           = 2.8,
+    box.padding    = 0.4,
+    max.overlaps   = 20,
+    segment.colour = "grey40"
+  ) +
+  scale_colour_manual(values = chr_colours, guide = "none") +
+  scale_x_continuous(label = axisdf$CHR, breaks = axisdf$centre) +
+  scale_y_continuous(
+    expand = c(0, 0),
+    limits = c(0, max(gwas_plot$NEGLOG10P, na.rm = TRUE) * 1.1)
+  ) +
+  labs(
+    title    = "Manhattan Plot — Severe COVID-19 GWAS",
+    subtitle = "Ellinghaus et al. 2020  |  GCST90000255  |  GRCh38",
+    x        = "Chromosome",
+    y        = expression(-log[10](italic(p))),
+    caption  = "Red dashed: genome-wide significance (p = 5x10-8)   Blue dotted: suggestive (p = 1x10-5)"
+  ) +
+  theme_bw(base_size = 13) +
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor   = element_blank(),
+        axis.text.x        = element_text(size = 9))
+
+print(p_manhattan)
+ggsave("Manhattan_Plot.png", p_manhattan, width = 14, height = 6, dpi = 200)
+cat("Saved: Manhattan_Plot.png\n")
+```
+
+---
+
+# 8. QQ Plot
+
+```{r qq-plot, fig.width=7, fig.height=7, fig.cap="QQ plot of observed vs expected p-values"}
+n_snps   <- nrow(gwas)
+observed <- sort(gwas$NEGLOG10P, decreasing = TRUE)
+expected <- -log10(ppoints(n_snps))
+
+# Genomic inflation factor lambda
+chisq  <- qchisq(gwas$P, df = 1, lower.tail = FALSE)
+lambda <- round(median(chisq, na.rm = TRUE) / qchisq(0.5, df = 1), 4)
+cat("Genomic inflation factor lambda =", lambda, "\n")
+
+# 95% confidence band
+ci_upper <- -log10(qbeta(0.025, 1:n_snps, n_snps:1))
+ci_lower <- -log10(qbeta(0.975, 1:n_snps, n_snps:1))
+
+qq_df <- data.frame(expected = expected, observed = observed,
+                    upper = ci_upper, lower = ci_lower)
+
+p_qq <- ggplot(qq_df, aes(x = expected, y = observed)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper),
+              fill = "lightblue", alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, colour = "red", linewidth = 0.8) +
+  geom_point(colour = "#2c7bb6", size = 0.6, alpha = 0.6) +
+  labs(
+    title    = "QQ Plot — Severe COVID-19 GWAS",
+    subtitle = paste0("Genomic inflation factor  lambda = ", lambda),
+    x        = expression("Expected " * -log[10](italic(p))),
+    y        = expression("Observed " * -log[10](italic(p))),
+    caption  = "Light blue = 95% CI under null hypothesis\nlambda close to 1.0 indicates well-controlled inflation"
+  ) +
+  theme_bw(base_size = 13)
+
+print(p_qq)
+ggsave("QQ_Plot.png", p_qq, width = 7, height = 7, dpi = 200)
+cat("Saved: QQ_Plot.png\n")
+```
+
+---
+
+# 9. Significant SNP Tables
+
+```{r sig-snps-table}
+sig_table <- gwas %>%
+  filter(P < 5e-8) %>%
+  arrange(P) %>%
+  select(CHR, BP, SNP, EA, NEA, BETA, SE, P, NEGLOG10P) %>%
+  mutate(across(where(is.numeric), ~ signif(.x, 4)))
+
+cat("Genome-wide significant SNPs:", nrow(sig_table), "\n\n")
+knitr::kable(head(sig_table, 30),
+             caption = "Top Genome-Wide Significant SNPs (P < 5x10-8)")
+```
+
+```{r suggestive-table}
+sug_table <- gwas %>%
+  filter(P >= 5e-8 & P < 1e-5) %>%
+  arrange(P) %>%
+  select(CHR, BP, SNP, EA, NEA, BETA, SE, P, NEGLOG10P) %>%
+  mutate(across(where(is.numeric), ~ signif(.x, 4)))
+
+cat("Suggestive significant SNPs:", nrow(sug_table), "\n\n")
+knitr::kable(head(sug_table, 20),
+             caption = "Suggestive Significant SNPs (P < 1x10-5)")
+```
+
+---
+
+# 10. Per-Chromosome Summary
+
+```{r chr-summary}
+chr_summary <- gwas %>%
+  group_by(CHR) %>%
+  summarise(
+    Total_SNPs      = n(),
+    Min_P           = signif(min(P), 3),
+    Max_NegLog10P   = round(max(NEGLOG10P), 2),
+    GW_Sig_SNPs     = sum(P < 5e-8),
+    Suggestive_SNPs = sum(P < 1e-5),
+    .groups = "drop"
+  ) %>%
+  arrange(CHR)
+
+knitr::kable(chr_summary, caption = "Per-Chromosome GWAS Summary")
+```
+
+---
+
+# 11. Save All Results
+
+```{r save-results}
+fwrite(sig_table,   "GWAS_GW_significant_SNPs.csv")
+fwrite(sug_table,   "GWAS_suggestive_SNPs.csv")
+fwrite(chr_summary, "GWAS_chromosome_summary.csv")
+fwrite(gwas %>% arrange(P) %>%
+         select(CHR, BP, SNP, EA, NEA, BETA, SE, P, NEGLOG10P, SIGNIFICANT),
+       "GWAS_all_cleaned.csv")
+
+cat("All files saved:\n")
+cat("  GWAS_GW_significant_SNPs.csv\n")
+cat("  GWAS_suggestive_SNPs.csv\n")
+cat("  GWAS_chromosome_summary.csv\n")
+cat("  GWAS_all_cleaned.csv\n")
+cat("  PCA_Plot.png\n")
+cat("  Manhattan_Plot.png\n")
+cat("  QQ_Plot.png\n")
+```
+
+---
+
+# 12. Biological Interpretation
+
+## Key GWAS Loci Identified
+
+| Locus | Chromosome | Key Gene(s) | Biological Role |
+|-------|-----------|-------------|-----------------|
+| **3p21.31** | Chr 3 | *SLC6A20, LZTFL1, CCR9, FYCO1, CXCR6, XCR1* | Immune trafficking, ACE2 interaction |
+| **9q34.2**  | Chr 9 | *ABO* blood group locus | Endothelial function, coagulation |
+
+## Interpretation
+
+- **Chr 3 locus (3p21.31):** The strongest signal in this study. *SLC6A20* interacts directly with ACE2 — the SARS-CoV-2 receptor. Chemokine receptor genes (*CXCR6, CCR9, XCR1*) regulate immune cell trafficking to infected lungs. This haplotype was inherited from Neanderthals and is enriched in Europeans, explaining elevated risk in this population.
+
+- **Chr 9 — ABO locus:** Blood group A individuals showed significantly higher risk of respiratory failure vs blood group O. ABO influences von Willebrand factor levels, endothelial activation, and complement pathways — all relevant to COVID-19 pathophysiology.
+
+- **Genomic inflation (lambda):** A value close to 1.0 confirms population stratification is well controlled, validating the association signals as genuine rather than artefactual.
+
+- **Pathways implicated:** Innate immune response, chemokine receptor signalling, ACE2-dependent viral entry, endothelial biology, and coagulation.
+
+---
+
+# 13. Session Info
+
+```{r session-info}
+sessionInfo()
+```
+
+---
+
+*Task 6 — GWAS Analysis Complete*  
+*Genomics Project Part B | SINES, NUST | April 2026*
