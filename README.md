@@ -623,7 +623,7 @@ rmarkdown::render("Task7_Integration/Task7_Integration.Rmd")
 | **Nawal Babar** | Genetics & Integration | Task 6 (GWAS analysis), Task 7 (multi-omics integration) |
 
 **Institution:** School of Interdisciplinary Engineering & Sciences (SINES), National University of Sciences and Technology (NUST), Islamabad, Pakistan  
-**Programme:** BS Bioinformatics, Undergraduate Year 1 · May 2026
+**Programme:** BS Bioinformatics, Undergraduate
 
 ---
 
