@@ -1,0 +1,657 @@
+---
+title: "Integration of GWAS, Gene Expression, ncRNA, ChIP-seq & QTL Concepts"
+author: "Genomics End Semester Project"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    highlight: tango
+    number_sections: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+# Global chunk options:
+# echo = TRUE     → show code in the output
+# warning = FALSE → suppress package warnings
+# message = FALSE → suppress package loading messages
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+---
+
+# Introduction
+
+This document integrates results from all previous tasks of the Genomics End Semester Project to identify **candidate genes** potentially involved in the studied disease condition. We bring together four independent lines of genomic evidence:
+
+| Task | Data Type | File Used |
+|------|-----------|-----------|
+| DEG Analysis | Differential Gene Expression (RNA-seq) | `DEG_results_significant.csv` |
+| ncRNA Analysis | ncRNA / miRNA Regulatory Interactions | `task4_interactions_complete.xlsx` |
+| ChIP-seq Analysis | CTCF ChIP-seq Annotated Peaks | `CTCF_annotated_peaks.csv` |
+| GWAS Analysis | GWAS Significant SNPs | `GWAS_GW_significant_SNPs.csv` |
+
+Genes supported by **multiple evidence layers** are the strongest candidate genes for the disease under study.
+
+---
+
+# Step 1: Load Libraries
+
+```{r libraries}
+# Install packages only once - uncomment and run if not already installed
+# install.packages(c("dplyr", "ggplot2", "ggvenn", "readxl",
+#                    "writexl", "RColorBrewer", "ggrepel", "tidyr", "knitr"))
+
+library(dplyr)        # Data manipulation: filter, merge, select, mutate
+library(ggplot2)      # High-quality data visualizations
+library(ggvenn)       # Venn diagrams for overlapping gene sets
+library(readxl)       # Read Excel (.xlsx) files
+library(writexl)      # Write output to Excel
+library(RColorBrewer) # Color palettes for plots
+library(ggrepel)      # Non-overlapping text labels on plots
+library(tidyr)        # Data reshaping (pivot_longer)
+library(knitr)        # Nicely formatted tables in the HTML output
+```
+
+---
+
+# Step 2: Load All Input Files
+
+```{r load-data}
+# ── Significant DEGs ─────────────────────────────────────────────────
+# Filtered DEGs from DESeq2 analysis (padj < 0.01)
+# Gene IDs are in Ensembl format (e.g. ENSG00000118113)
+deg <- read.csv("DEG_results_significant.csv", stringsAsFactors = FALSE)
+cat("DEGs loaded:", nrow(deg), "significant genes\n")
+
+# ── ncRNA Interactions ───────────────────────────────────────────────
+# miRNA-target gene interactions predicted from miRDB
+# Target genes are in gene symbol format (e.g. MMP8, CD209)
+ncrna <- read_excel("task4_interactions_complete.xlsx", 
+                    sheet = "ncRNA Interactions")
+ncrna <- as.data.frame(ncrna)
+cat("ncRNA interactions loaded:", nrow(ncrna), "rows\n")
+
+# ── CTCF ChIP-seq Annotated Peaks ───────────────────────────────────
+# ChIP-seq peaks annotated to nearby genes using ChIPseeker
+# Contains both ENSEMBL IDs and SYMBOL columns — used as our reference map
+chipseq <- read.csv("CTCF_annotated_peaks.csv", stringsAsFactors = FALSE)
+cat("ChIP-seq peaks loaded:", nrow(chipseq), "annotated peaks\n")
+
+# ── GWAS Significant SNPs ────────────────────────────────────────────
+# Genome-wide significant SNPs (p < 5×10⁻⁸) with chromosome and position
+gwas <- read.csv("GWAS_GW_significant_SNPs.csv", stringsAsFactors = FALSE)
+cat("GWAS SNPs loaded:", nrow(gwas), "significant SNPs\n")
+```
+
+---
+
+# Step 3: Prepare Gene Lists from Each Data Source
+
+The main challenge here is that each task uses a **different gene identifier format**. We standardize everything to Ensembl IDs for comparison.
+
+```{r gene-lists}
+# ── 3A: DEG gene list ────────────────────────────────────────────────────────
+# DEGs already use Ensembl IDs — just extract the unique set
+deg_ensembl <- unique(deg$gene)
+cat("Unique DEG Ensembl IDs:", length(deg_ensembl), "\n")
+
+# ── 3B: ChIP-seq gene list ───────────────────────────────────────────────────
+# Remove peaks not annotated to any gene (NA in ENSEMBL or SYMBOL columns)
+# These unannotated peaks are in intergenic regions and cannot be linked to genes
+chipseq_clean <- chipseq %>%
+  filter(!is.na(ENSEMBL) & ENSEMBL != "" & !is.na(SYMBOL)) %>%
+  select(ENSEMBL, SYMBOL) %>%
+  distinct()
+
+chipseq_ensembl <- unique(chipseq_clean$ENSEMBL)
+chipseq_symbols  <- unique(chipseq_clean$SYMBOL)
+cat("Unique CTCF target genes (Ensembl):", length(chipseq_ensembl), "\n")
+
+# ── 3C: ncRNA target gene list ───────────────────────────────────────────────
+# Filter out rows where no miRNA was found (marked as "N/A")
+ncrna_clean <- ncrna %>%
+  filter(miRNA != "N/A" & `Target Gene` != "N/A")
+
+ncrna_targets_symbols <- unique(ncrna_clean$`Target Gene`)
+cat("Unique ncRNA target gene symbols:", length(ncrna_targets_symbols), "\n")
+cat("Target genes:", paste(ncrna_targets_symbols, collapse = ", "), "\n")
+
+# Convert ncRNA symbols → Ensembl IDs using ChIP-seq as our reference mapping table
+# ChIP-seq data has the most complete SYMBOL↔ENSEMBL mapping
+symbol_to_ensembl <- chipseq_clean %>%
+  filter(SYMBOL %in% ncrna_targets_symbols) %>%
+  select(SYMBOL, ENSEMBL) %>%
+  distinct()
+
+ncrna_targets_ensembl <- unique(symbol_to_ensembl$ENSEMBL)
+cat("ncRNA targets successfully mapped to Ensembl:", 
+    length(ncrna_targets_ensembl), "out of", length(ncrna_targets_symbols), "\n")
+
+# ── 3D: GWAS locus genes ─────────────────────────────────────────────────────
+# GWAS SNPs have positions but no gene IDs. We find genes within ±500kb of each
+# SNP using the ChIP-seq annotated peak file as our gene coordinate reference.
+# This ±500kb window captures likely regulatory target genes of the SNP.
+gwas_locus_genes <- data.frame()
+
+for (i in 1:nrow(gwas)) {
+  chr_query <- paste0("chr", gwas$CHR[i])
+  bp        <- gwas$BP[i]
+  window    <- 500000  # ±500 kilobase window around each SNP
+  
+  nearby <- chipseq %>%
+    filter(seqnames == chr_query,
+           start    >= (bp - window),
+           end      <= (bp + window),
+           !is.na(ENSEMBL), !is.na(SYMBOL)) %>%
+    select(ENSEMBL, SYMBOL) %>%
+    distinct() %>%
+    mutate(SNP   = gwas$SNP[i],
+           SNP_P = gwas$P[i],
+           CHR   = gwas$CHR[i],
+           BP    = bp)
+  
+  gwas_locus_genes <- bind_rows(gwas_locus_genes, nearby)
+}
+
+gwas_locus_genes <- gwas_locus_genes %>%
+  distinct(ENSEMBL, SYMBOL, .keep_all = TRUE)
+
+gwas_ensembl <- unique(gwas_locus_genes$ENSEMBL)
+cat("GWAS locus genes (within ±500kb of SNPs):", length(gwas_ensembl), "\n")
+```
+
+---
+
+# Step 4: Find Overlaps Between All Gene Lists
+
+Genes appearing in **multiple evidence layers** are the strongest candidates for disease involvement.
+
+```{r overlaps}
+# ── Pairwise overlaps ────────────────────────────────────────────────────────
+deg_chipseq_overlap   <- intersect(deg_ensembl, chipseq_ensembl)
+deg_ncrna_overlap     <- intersect(deg_ensembl, ncrna_targets_ensembl)
+deg_gwas_overlap      <- intersect(deg_ensembl, gwas_ensembl)
+chipseq_ncrna_overlap <- intersect(chipseq_ensembl, ncrna_targets_ensembl)
+chipseq_gwas_overlap  <- intersect(chipseq_ensembl, gwas_ensembl)
+ncrna_gwas_overlap    <- intersect(ncrna_targets_ensembl, gwas_ensembl)
+
+# ── Triple overlap: strongest candidates ─────────────────────────────────────
+# Genes that are DEGs AND CTCF targets AND ncRNA-regulated
+triple_overlap <- intersect(deg_chipseq_overlap, ncrna_targets_ensembl)
+
+# ── Quadruple overlap ────────────────────────────────────────────────────────
+quad_overlap <- intersect(triple_overlap, gwas_ensembl)
+
+# ── Summary table ────────────────────────────────────────────────────────────
+overlap_summary <- data.frame(
+  Comparison                    = c("DEG ∩ ChIP-seq (CTCF)",
+                                    "DEG ∩ ncRNA Targets",
+                                    "DEG ∩ GWAS Loci",
+                                    "ChIP-seq ∩ ncRNA Targets",
+                                    "ChIP-seq ∩ GWAS Loci",
+                                    "ncRNA ∩ GWAS Loci",
+                                    "Triple (DEG + ChIP + ncRNA)",
+                                    "Quadruple (all four)"),
+  Number_of_Genes               = c(length(deg_chipseq_overlap),
+                                    length(deg_ncrna_overlap),
+                                    length(deg_gwas_overlap),
+                                    length(chipseq_ncrna_overlap),
+                                    length(chipseq_gwas_overlap),
+                                    length(ncrna_gwas_overlap),
+                                    length(triple_overlap),
+                                    length(quad_overlap))
+)
+
+kable(overlap_summary, 
+      caption = "Table 1: Pairwise and Multi-way Gene Set Overlaps",
+      align   = c("l", "c"))
+```
+
+---
+
+# Step 5: Build the Integrated Evidence Table
+
+This table is the core deliverable of this Task. Each row is a gene; each column shows whether that gene is supported by a particular evidence layer.
+
+```{r evidence-table}
+# Pool all genes that appear in at least one evidence layer
+all_candidate_ensembl <- unique(c(deg_ensembl, chipseq_ensembl,
+                                   ncrna_targets_ensembl, gwas_ensembl))
+
+# Build symbol mapping from ChIP-seq reference
+all_symbols_map <- chipseq_clean %>%
+  bind_rows(
+    data.frame(
+      ENSEMBL = ncrna_targets_ensembl,
+      SYMBOL  = symbol_to_ensembl$SYMBOL[match(ncrna_targets_ensembl,
+                                                symbol_to_ensembl$ENSEMBL)]
+    )
+  ) %>%
+  distinct(ENSEMBL, .keep_all = TRUE)
+
+# Construct the full evidence table
+evidence_table <- data.frame(ENSEMBL = all_candidate_ensembl) %>%
+  left_join(all_symbols_map, by = "ENSEMBL") %>%
+  left_join(deg %>% select(gene, log2FoldChange, padj) %>%
+              rename(ENSEMBL = gene),
+            by = "ENSEMBL") %>%
+  mutate(
+    Is_DEG          = ENSEMBL %in% deg_ensembl,
+    Is_ChIPseq      = ENSEMBL %in% chipseq_ensembl,
+    Is_ncRNA_target = ENSEMBL %in% ncrna_targets_ensembl,
+    Is_GWAS_gene    = ENSEMBL %in% gwas_ensembl,
+    Evidence_Count  = Is_DEG + Is_ChIPseq + Is_ncRNA_target + Is_GWAS_gene,
+    Direction       = case_when(
+      Is_DEG & log2FoldChange > 0 ~ "Upregulated",
+      Is_DEG & log2FoldChange < 0 ~ "Downregulated",
+      TRUE                        ~ "Not a DEG"
+    )
+  ) %>%
+  filter(Evidence_Count >= 2) %>%
+  arrange(desc(Evidence_Count), desc(abs(log2FoldChange)))
+
+cat("Genes with ≥2 evidence layers:", nrow(evidence_table), "\n")
+
+# ── Final candidate gene list ────────────────────────────────────────────────
+candidate_genes <- evidence_table %>%
+  filter(!is.na(SYMBOL)) %>%
+  select(ENSEMBL, SYMBOL, log2FoldChange, padj, Direction,
+         Is_DEG, Is_ChIPseq, Is_ncRNA_target, Is_GWAS_gene, Evidence_Count)
+
+# Save to CSV
+write.csv(candidate_genes,  "Candidate_Genes.csv",         row.names = FALSE)
+write.csv(evidence_table,   "Integrated_Evidence_Table.csv", row.names = FALSE)
+write.csv(gwas_locus_genes, "GWAS_Locus_Genes.csv",        row.names = FALSE)
+
+# Show top candidates in the document
+kable(candidate_genes %>% filter(Evidence_Count >= 3),
+      caption = "Table 2: Top Candidate Genes — Supported by 3 Evidence Layers",
+      digits  = 4)
+```
+
+---
+
+# Step 6: Triple Overlap Summary Table
+
+```{r triple-summary}
+# These are the strongest candidates: DEG + ChIP-seq + ncRNA
+triple_summary <- candidate_genes %>%
+  filter(Is_DEG & Is_ChIPseq & Is_ncRNA_target) %>%
+  arrange(desc(abs(log2FoldChange)))
+
+write.csv(triple_summary, "Triple_Overlap_Candidates.csv", row.names = FALSE)
+
+kable(triple_summary %>% select(SYMBOL, ENSEMBL, log2FoldChange, padj, Direction),
+      caption = "Table 3: Triple-Evidence Candidate Genes (DEG + CTCF ChIP-seq + ncRNA)",
+      digits  = 4)
+```
+
+---
+
+# Step 7: Venn Diagram of Gene Set Overlaps {.tabset}
+
+```{r venn-diagram, fig.width=10, fig.height=8, fig.cap="Figure 1: Overlap of gene sets across DEG, ChIP-seq, and ncRNA evidence layers. GWAS locus gene count is shown as an annotation."}
+# ggvenn takes a named list of gene sets and draws the overlapping circles.
+# We use 3 sets (DEG, ChIP-seq, ncRNA) because the GWAS set has only 25 genes
+# — adding a 4th circle would make the diagram unreadable.
+# GWAS overlap is instead noted as a text annotation below the diagram.
+
+venn_list <- list(
+  "DEGs"          = deg_ensembl,
+  "CTCF Targets" = chipseq_ensembl,
+  "ncRNA Targets" = ncrna_targets_ensembl
+)
+
+venn_plot <- ggvenn(
+  venn_list,
+  fill_color   = c("#E41A1C", "#377EB8", "#4DAF4A"),
+  stroke_size  = 0.8,
+  set_name_size = 4,
+  text_size    = 3.5
+) +
+  labs(
+    title    = "Gene Set Overlap: DEGs, CTCF ChIP-seq Targets & ncRNA Targets",
+    subtitle = paste0("GWAS locus genes: ", length(gwas_ensembl),
+                      " CTCF target genes near significant SNPs on chr3 & chr9")
+  ) +
+  theme(
+    plot.title    = element_text(hjust = 0.5, size = 13, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 9,  color = "#7B1FA2")
+  )
+
+print(venn_plot)
+ggsave("Venn_Diagram.png", venn_plot, width = 10, height = 8, dpi = 300)
+```
+
+---
+
+# Step 8: Evidence Heatmap
+
+Each row is a candidate gene; each column is an evidence layer. Blue = gene is supported by that layer.
+
+```{r evidence-heatmap, fig.width=9, fig.height=11, fig.cap="Figure 2: Multi-omics evidence matrix. Blue cells indicate that the gene is supported by that evidence layer."}
+# Take top 25 candidates sorted by evidence count then fold change magnitude
+top25 <- candidate_genes %>%
+  filter(!is.na(SYMBOL)) %>%
+  head(25)
+
+# Reshape from wide to long format so ggplot can map columns to x-axis
+heatmap_data <- top25 %>%
+  select(SYMBOL, Is_DEG, Is_ChIPseq, Is_ncRNA_target, Is_GWAS_gene) %>%
+  pivot_longer(
+    cols      = starts_with("Is_"),
+    names_to  = "Evidence_Layer",
+    values_to = "Present"
+  ) %>%
+  mutate(
+    # Rename columns for cleaner axis labels
+    Evidence_Layer = recode(Evidence_Layer,
+      "Is_DEG"          = "DEG\n",
+      "Is_ChIPseq"      = "CTCF ChIP-seq\n",
+      "Is_ncRNA_target" = "ncRNA Regulated\n",
+      "Is_GWAS_gene"    = "Near GWAS Locus\n"
+    ),
+    Present = as.numeric(Present)
+  )
+
+evidence_heatmap <- ggplot(heatmap_data,
+                            aes(x = Evidence_Layer, y = SYMBOL,
+                                fill = factor(Present))) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  scale_fill_manual(
+    values = c("0" = "#f0f0f0", "1" = "#2166AC"),
+    labels = c("0" = "Absent", "1" = "Present"),
+    name   = "Evidence"
+  ) +
+  labs(
+    title    = "Multi-Omics Evidence Matrix for Candidate Genes",
+    subtitle = "Blue = gene supported by that evidence layer",
+    x        = "Evidence Layer",
+    y        = "Gene Symbol"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.title    = element_text(hjust = 0.5, face = "bold", size = 13),
+    plot.subtitle = element_text(hjust = 0.5, size = 9),
+    axis.text.x   = element_text(size = 9),
+    axis.text.y   = element_text(size = 8),
+    panel.grid    = element_blank()
+  )
+
+print(evidence_heatmap)
+ggsave("Evidence_Heatmap.png", evidence_heatmap,
+       width = 9, height = 11, dpi = 300)
+```
+
+---
+
+# Step 9: Volcano Plot with Candidate Gene Highlights
+
+All significant DEGs are shown; the three triple-evidence candidates (MMP8, IL23R, CD209) are highlighted and labelled.
+
+```{r volcano-plot, fig.width=12, fig.height=8, fig.cap="Figure 3: Volcano plot of all significant DEGs. Large red/blue points are triple-evidence candidate genes also supported by ChIP-seq and ncRNA data."}
+# Join DEG data with gene symbols from ChIP-seq map
+deg_with_symbols <- deg %>%
+  left_join(chipseq_clean, by = c("gene" = "ENSEMBL")) %>%
+  distinct(gene, .keep_all = TRUE) %>%
+  mutate(
+    neg_log10_padj = -log10(padj),
+    # Categorize each gene for coloring
+    Point_Color = case_when(
+      gene %in% triple_overlap & log2FoldChange > 0 ~ "Triple-overlap Up",
+      gene %in% triple_overlap & log2FoldChange < 0 ~ "Triple-overlap Down",
+      log2FoldChange >  1                            ~ "Upregulated DEG",
+      log2FoldChange < -1                            ~ "Downregulated DEG",
+      TRUE                                           ~ "Background DEG"
+    )
+  )
+
+# Subset just the candidates for labelling
+candidate_labels <- deg_with_symbols %>% filter(gene %in% triple_overlap)
+
+highlight_plot <- ggplot(deg_with_symbols,
+                          aes(x = log2FoldChange, y = neg_log10_padj,
+                              color = Point_Color)) +
+  geom_point(alpha = 0.35, size = 1.2) +
+  geom_point(data = candidate_labels, size = 4.5, alpha = 1) +
+  geom_label_repel(
+    data         = candidate_labels,
+    aes(label    = SYMBOL),
+    size         = 4,
+    fontface     = "bold",
+    box.padding  = 0.6,
+    max.overlaps = 20
+  ) +
+  scale_color_manual(values = c(
+    "Triple-overlap Up"   = "#D73027",
+    "Triple-overlap Down" = "#4575B4",
+    "Upregulated DEG"     = "#FC8D59",
+    "Downregulated DEG"   = "#91BFDB",
+    "Background DEG"      = "grey75"
+  )) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = -log10(0.01), linetype = "dashed", color = "grey40") +
+  labs(
+    title    = "DEG Volcano Plot — Triple-Evidence Candidate Genes Highlighted",
+    subtitle = "Large points = genes supported by DEG + CTCF ChIP-seq + ncRNA evidence",
+    x        = "log2 Fold Change",
+    y        = "-log10(adjusted p-value)",
+    color    = "Gene Category"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    plot.title      = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle   = element_text(hjust = 0.5, size = 9),
+    legend.position = "right"
+  )
+
+print(highlight_plot)
+ggsave("Candidate_Highlight_Plot.png", highlight_plot,
+       width = 12, height = 8, dpi = 300)
+```
+
+---
+
+# Step 10: GWAS × ChIP-seq Overlap Bar Chart
+
+CTCF target genes located near GWAS significant SNPs — these genes are the most likely regulatory targets of the disease-associated variants.
+
+```{r gwas-chipseq-bar, fig.width=10, fig.height=7, fig.cap="Figure 4: CTCF ChIP-seq target genes near GWAS significant SNP loci. Red dashed line = genome-wide significance threshold (p < 5×10⁻⁸)."}
+# Filter GWAS locus genes that are also CTCF ChIP-seq targets
+gwas_chip_genes <- gwas_locus_genes %>%
+  filter(ENSEMBL %in% chipseq_ensembl) %>%
+  distinct(SYMBOL, .keep_all = TRUE) %>%
+  arrange(SNP_P) %>%
+  head(20)
+
+gwas_bar <- ggplot(gwas_chip_genes,
+                   aes(x = reorder(SYMBOL, -SNP_P),
+                       y = -log10(SNP_P),
+                       fill = factor(CHR))) +
+  geom_bar(stat = "identity", color = "white") +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set1", name = "Chromosome") +
+  geom_hline(yintercept = -log10(5e-8), linetype = "dashed",
+             color = "red", linewidth = 0.8) +
+  labs(
+    title    = "CTCF Target Genes Near GWAS Significant SNP Loci",
+    subtitle = "Red dashed line = genome-wide significance threshold (p < 5×10⁻⁸)",
+    x        = "Gene (CTCF ChIP-seq target)",
+    y        = "-log10(GWAS p-value)"
+  ) +
+  theme_bw(base_size = 11) +
+  theme(
+    plot.title    = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 9)
+  )
+
+print(gwas_bar)
+ggsave("GWAS_ChIPseq_Overlap.png", gwas_bar,
+       width = 10, height = 7, dpi = 300)
+```
+
+---
+
+# Step 11: eQTL Conceptual Workflow Diagram
+
+This diagram illustrates how a GWAS SNP can propagate through regulatory layers to ultimately alter gene expression — the core concept behind expression Quantitative Trait Loci (eQTLs).
+
+```{r eqtl-diagram, fig.width=10, fig.height=9, fig.cap="Figure 5: SNP → Regulation → Expression model explaining how GWAS variants affect gene expression through regulatory mechanisms (eQTL concept)."}
+eqtl_diagram <- ggplot() +
+  # ── Coloured boxes ──────────────────────────────────────────────────────────
+  annotate("rect", xmin=1, xmax=3, ymin=8.5, ymax=9.5,
+           fill="#AED6F1", color="#2980B9", linewidth=1) +
+  annotate("rect", xmin=1, xmax=3, ymin=6.5, ymax=7.5,
+           fill="#A9DFBF", color="#27AE60", linewidth=1) +
+  annotate("rect", xmin=1, xmax=3, ymin=4.5, ymax=5.5,
+           fill="#F9E79F", color="#F39C12", linewidth=1) +
+  annotate("rect", xmin=1, xmax=3, ymin=2.5, ymax=3.5,
+           fill="#F5CBA7", color="#E67E22", linewidth=1) +
+  annotate("rect", xmin=1, xmax=3, ymin=0.5, ymax=1.5,
+           fill="#D7BDE2", color="#8E44AD", linewidth=1) +
+  # ── Box text ─────────────────────────────────────────────────────────────────
+  annotate("text", x=2, y=9,
+           label="GWAS SNP\n(Genetic Variant)",
+           size=4, fontface="bold") +
+  annotate("text", x=2, y=7,
+           label="Disrupts CTCF Binding/\nInsulator Site\n(CTCF ChIP-seq)",
+           size=4, fontface="bold") +
+  annotate("text", x=2, y=5,
+           label="Changes Chromatin State\n& Promoter Accessibility",
+           size=4, fontface="bold") +
+  annotate("text", x=2, y=3,
+           label="Disrupts miRNA Regulation\n(ncRNA Analysis)",
+           size=4, fontface="bold") +
+  annotate("text", x=2, y=1,
+           label="Altered Gene Expression\n(DEG)\nMMP8\u2191  |  CD209\u2193  |  IL23R\u2193",
+           size=4, fontface="bold") +
+  # ── Connecting arrows ────────────────────────────────────────────────────────
+  annotate("segment", x=2, xend=2, y=8.5, yend=7.5,
+           arrow=arrow(length=unit(0.3,"cm"), type="closed"),
+           linewidth=1.2, color="grey30") +
+  annotate("segment", x=2, xend=2, y=6.5, yend=5.5,
+           arrow=arrow(length=unit(0.3,"cm"), type="closed"),
+           linewidth=1.2, color="grey30") +
+  annotate("segment", x=2, xend=2, y=4.5, yend=3.5,
+           arrow=arrow(length=unit(0.3,"cm"), type="closed"),
+           linewidth=1.2, color="grey30") +
+  annotate("segment", x=2, xend=2, y=2.5, yend=1.5,
+           arrow=arrow(length=unit(0.3,"cm"), type="closed"),
+           linewidth=1.2, color="grey30") +
+  # ── eQTL side note box ────────────────────────────────────────────────────────
+  annotate("rect", xmin=3.3, xmax=4.8, ymin=4.5, ymax=9.5,
+           fill="#FDFEFE", color="#BDC3C7", linewidth=0.8, linetype="dashed") +
+  annotate("text", x=4.05, y=7,
+           label="eQTL:\nSNP genotype\ncorrelates with\ngene expression\nlevel",
+           size=3.5, color="#7F8C8D") +
+  annotate("segment", x=3, xend=3.3, y=7, yend=7,
+           linetype="dashed", color="#BDC3C7") +
+  # ── Titles ───────────────────────────────────────────────────────────────────
+  labs(
+    title    = "SNP \u2192 Regulation \u2192 Expression Model (eQTL Concept)",
+    subtitle = "How a GWAS variant propagates through regulatory layers to affect gene expression"
+  ) +
+  xlim(0.5, 5) + ylim(0, 10.5) +
+  theme_void() +
+  theme(
+    plot.title    = element_text(hjust=0.5, size=13, face="bold"),
+    plot.subtitle = element_text(hjust=0.5, size=9, color="grey40"),
+    plot.margin   = margin(10, 10, 10, 10)
+  )
+
+print(eqtl_diagram)
+ggsave("eQTL_Workflow_Diagram.png", eqtl_diagram,
+       width = 10, height = 9, dpi = 300)
+```
+
+---
+
+# Step 12: Final Integration Summary
+
+```{r final-summary}
+# ── Print summary statistics ──────────────────────────────────────────────────
+summary_df <- data.frame(
+  Category = c(
+    "Total significant DEGs",
+    "CTCF ChIP-seq target genes",
+    "ncRNA-regulated genes",
+    "GWAS locus genes",
+    "DEG ∩ ChIP-seq overlap",
+    "DEG ∩ ncRNA target overlap",
+    "Triple overlap (DEG + ChIP-seq + ncRNA)",
+    "Quadruple overlap (all four layers)"
+  ),
+  Count = c(
+    length(deg_ensembl),
+    length(chipseq_ensembl),
+    length(ncrna_targets_symbols),
+    length(gwas_ensembl),
+    length(deg_chipseq_overlap),
+    length(deg_ncrna_overlap),
+    length(triple_overlap),
+    length(quad_overlap)
+  )
+)
+
+kable(summary_df,
+      caption = "Table 4: Integration Summary",
+      align   = c("l","c"))
+```
+
+## Top Candidate Genes
+
+```{r candidate-table}
+# Final table of strongest candidates supported by 3 evidence layers
+kable(triple_summary %>%
+        select(SYMBOL, ENSEMBL, log2FoldChange, padj, Direction, Evidence_Count),
+      caption = "Table 5: Final Candidate Genes — MMP8, CD209, IL23R",
+      digits  = 4)
+```
+
+## Biological Interpretation
+
+The integration of all four genomic evidence layers identifies **MMP8**, **CD209**, and **IL23R** as the top candidate genes:
+
+- **MMP8** (Matrix Metalloproteinase 8) is significantly **upregulated** (LFC = +4.55, padj = 0.0079). It is a CTCF-bound gene and its expression is suppressed by multiple miRNAs. MMP8 upregulation promotes extracellular matrix degradation and inflammation, consistent with disease progression.
+
+- **CD209** (DC-SIGN) is significantly **downregulated** (LFC = −2.24, padj = 0.0015). It is a CTCF target and miRNA-regulated, suggesting its reduced expression may impair innate immune recognition.
+
+- **IL23R** (Interleukin-23 Receptor) is significantly **downregulated** (LFC = −2.33, padj = 0.0003). As a CTCF target and ncRNA-regulated gene, IL23R dysregulation disrupts Th17 immune signalling, which has well-established links to inflammatory disease.
+
+The GWAS significant SNPs on **chromosome 3 (45.8 Mb)** and **chromosome 9 (133 Mb)** fall within CTCF binding regions near immune-related genes (CCR5, LTF, RALGDS), suggesting that disease-associated genetic variants may disrupt CTCF-mediated chromatin looping/insulator function at these loci, altering enhancer–promoter contacts and downstream gene expression — an eQTL mechanism connecting genotype to expression change.
+
+---
+
+# Output Files Generated
+
+```{r outputs-list, echo=FALSE}
+outputs <- data.frame(
+  File = c("Candidate_Genes.csv",
+           "Integrated_Evidence_Table.csv",
+           "Triple_Overlap_Candidates.csv",
+           "GWAS_Locus_Genes.csv",
+           "Venn_Diagram.png",
+           "Evidence_Heatmap.png",
+           "Candidate_Highlight_Plot.png",
+           "GWAS_ChIPseq_Overlap.png",
+           "eQTL_Workflow_Diagram.png"),
+  Description = c("All candidate genes with ≥2 evidence layers",
+                  "Full evidence table for all genes",
+                  "Top 3 candidates: MMP8, CD209, IL23R",
+                  "Genes near GWAS SNP loci from ChIP-seq peaks",
+                  "Venn diagram: DEG ∩ ChIP-seq ∩ ncRNA overlap",
+                  "Heatmap of multi-omics evidence per gene",
+                  "Volcano plot with candidates highlighted",
+                  "Bar chart: GWAS × ChIP-seq gene overlap",
+                  "eQTL conceptual workflow diagram")
+)
+kable(outputs, caption = "Table 6: All Task Output Files")
+```
+
+---
+
+*End of Task — Genomics Project*
