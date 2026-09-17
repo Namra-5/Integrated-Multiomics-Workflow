@@ -9,9 +9,9 @@
 
 ## Paper
 
-**Multi-Omics Integration Across Regulatory Layers Reveals Candidate Drivers of Severe COVID-19 Immunopathology**
-Namra Basharat, Ghania, Hania Fahad
-School of Interdisciplinary Engineering and Sciences (SINES), National University of Sciences and Technology (NUST), Islamabad, Pakistan
+**Multi-Omics Integration Across Regulatory Layers Reveals Candidate Drivers of Severe COVID-19 Immunopathology**  
+Namra Basharat, Ghania, Hania Fahad  
+School of Interdisciplinary Engineering and Sciences (SINES), National University of Sciences and Technology (NUST), Islamabad, Pakistan  
 *Preprint, bioRxiv, 2026.* DOI: *to be added upon posting*
 
 ## Table of Contents
@@ -29,6 +29,7 @@ School of Interdisciplinary Engineering and Sciences (SINES), National Universit
 - [Authors and Contributors](#authors-and-contributors)
 - [Citation](#citation)
 - [License](#license)
+- [Contact](#contact)
 
 ---
 
@@ -36,55 +37,60 @@ School of Interdisciplinary Engineering and Sciences (SINES), National Universit
 
 Most people who contract SARS-CoV-2 recover without incident; a smaller fraction develop life-threatening disease. This repository investigates the regulatory basis of that divergence by integrating four independent molecular layers on a 10-sample PBMC RNA-seq subset (5 healthy controls, 5 severe COVID-19 patients) drawn from [GSE152418](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE152418), originally profiled by Arunachalam et al. (2020, *Science*).
 
-**A note on interpretation:** the ChIP-seq layer in this study profiles **CTCF**, a constitutive chromatin-architectural protein — not an inflammatory transcriptional activator such as NF-κB. Overlap between a CTCF peak and a differentially expressed gene indicates that gene sits within an architecturally organized chromatin domain; it is not, by itself, evidence that CTCF drives the observed expression change. This distinction is discussed explicitly in the paper's Discussion and Limitations sections and is preserved throughout this repository.
+> **A note on interpretation:** The ChIP-seq layer in this study profiles **CTCF**, a constitutive chromatin-architectural protein — not an inflammatory transcriptional activator such as NF-κB. Overlap between a CTCF peak and a differentially expressed gene indicates that gene sits within an architecturally organized chromatin domain; it is not, by itself, evidence that CTCF drives the observed expression change. This distinction is discussed explicitly in the paper's Discussion and Limitations sections and is preserved throughout this repository.
+
+---
 
 ## Central Question
 
-The project addresses this at four regulatory levels simultaneously:
+The project addresses regulatory disruption at four molecular levels simultaneously:
 
 | Level | Approach | Question Asked |
 |---|---|---|
-| Transcriptome | RNA-seq + DESeq2 | Which genes are dysregulated in severe COVID-19 PBMCs? |
-| Chromatin architecture | CTCF ChIP-seq (ENCODE) | Which genes sit within CTCF-organized chromatin domains? |
-| Post-transcriptional | miRNA target-network analysis | Which microRNAs regulate the most dysregulated genes? |
-| Genetic risk | GWAS reanalysis (Ellinghaus et al.) | Which inherited variants predispose to severe disease? |
+| **Transcriptome** | RNA-seq + DESeq2 | Which genes are dysregulated in severe COVID-19 PBMCs? |
+| **Chromatin architecture** | CTCF ChIP-seq (ENCODE) | Which genes sit within CTCF-organized chromatin domains? |
+| **Post-transcriptional** | miRNA target-network analysis | Which microRNAs regulate the most dysregulated genes? |
+| **Genetic risk** | GWAS reanalysis (Ellinghaus et al.) | Which inherited variants predispose to severe disease? |
+
+---
 
 ## Pipeline Architecture
 
+```
                  Raw SRA Reads (NCBI GEO: GSE152418)
-                               │
-                               ▼
-                   ┌───────────────────────┐
-                   │        Stage 1        │  FastQC → Trim Galore → HISAT2 → featureCounts
-                   │  01_rnaseq_processing  │  Output: 42,355-gene × 10-sample count matrix
-                   └───────────┬───────────┘
-                               │
-                               ▼
-                   ┌───────────────────────┐
-                   │        Stage 2        │  DESeq2 v1.52.0 (negative binomial, BH FDR)
-                   │02_differential_expression│ Output: 1,459 significant DEGs (padj < 0.01)
-                   └───────────┬───────────┘
-                               │
-    ┌──────────────────┬──────┴───────────┬──────────────────┐
-    ▼                  ▼                  ▼                  ▼
-    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-│ Stage 3 │ │ Stage 4 │ │ Stage 5 │ │ Stage 6 │
-│ GO/KEGG │ │ ncRNA │ │ CTCF │ │ GWAS │
-│03_functional│ │04_mirna_ │ │05_ctcf_ │ │06_gwas_ │
-│_enrichment │ │network │ │chipseq │ │analysis │
-└──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘
-│ │ │ │
-└─────────────────┴─────────┬────────┴──────────────────┘
-│
-▼
-┌───────────────────────┐
-│ Stage 7 │ Multi-omics integration → Candidate gene scoring
-│07_multiomics_integration│ Output: MMP8, IL23R, CD209 (triple-layer evidence)
-└───────────────────────┘
+                                  │
+                                  ▼
+                    ┌───────────────────────────┐
+                    │          Stage 1          │  FastQC → Trim Galore → HISAT2 → featureCounts
+                    │   01_rnaseq_processing    │  Output: 42,355-gene × 10-sample count matrix
+                    └─────────────┬─────────────┘
+                                  │
+                                  ▼
+                    ┌───────────────────────────┐
+                    │          Stage 2          │  DESeq2 v1.52.0 (negative binomial, BH FDR)
+                    │ 02_differential_expression│  Output: 1,459 significant DEGs (padj < 0.01)
+                    └─────────────┬─────────────┘
+                                  │
+    ┌──────────────────┬──────────┴───────────┬──────────────────┐
+    ▼                  ▼                      ▼                  ▼
+┌─────────────┐  ┌─────────────┐        ┌─────────────┐    ┌─────────────┐
+│   Stage 3   │  │   Stage 4   │        │   Stage 5   │    │   Stage 6   │
+│   GO/KEGG   │  │    ncRNA    │        │    CTCF     │    │    GWAS     │
+│03_functional│  │ 04_mirna_   │        │  05_ctcf_   │    │  06_gwas_   │
+│_enrichment  │  │   network   │        │   chipseq   │    │  analysis   │
+└──────┬──────┘  └──────┬──────┘        └──────┬──────┘    └──────┬──────┘
+       │                │                      │                  │
+       └────────────────┴──────────┬───────────┴──────────────────┘
+                                   │
+                                   ▼
+                    ┌───────────────────────────┐
+                    │          Stage 7          │  Multi-omics integration → Candidate gene scoring
+                    │ 07_multiomics_integration │  Output: MMP8, IL23R, CD209 (triple-layer evidence)
+                    └───────────────────────────┘
 
-
+```
 ## Repository Structure
-
+```
 Integrated-Multiomics-Workflow/
 ├── README.md
 ├── LICENSE
@@ -92,70 +98,79 @@ Integrated-Multiomics-Workflow/
 ├── .gitattributes
 ├── .gitignore
 │
-├── 01_rnaseq_processing/ # SRA download → QC → alignment → quantification
-│ ├── 0_setup.sh
-│ ├── 1_download_and_merge.sh
-│ ├── 2_reference_and_index.sh
-│ ├── 3_fastqc.sh
-│ ├── 4_trimming.sh
-│ ├── 5_mapping.sh
-│ ├── 6_name_sort.sh
-│ ├── 7_featurecounts.sh
-│ ├── 8_cleanup.R
-│ ├── data/trimmed/ # Trim Galore QC reports
-│ ├── logs/ # HISAT2 per-sample alignment logs
-│ ├── reference/ # Genome/annotation (not tracked — see below)
-│ └── Results/
-│ ├── Alignments/ # Sorted BAM index files
-│ ├── Counts/ # Raw and cleaned featureCounts matrices
-│ └── fastqc/ # Per-sample FastQC reports
+├── 01_rnaseq_processing/               # SRA download → QC → alignment → quantification
+│   ├── 0_setup.sh
+│   ├── 1_download_and_merge.sh
+│   ├── 2_reference_and_index.sh
+│   ├── 3_fastqc.sh
+│   ├── 4_trimming.sh
+│   ├── 5_mapping.sh
+│   ├── 6_name_sort.sh
+│   ├── 7_featurecounts.sh
+│   ├── 8_cleanup.R
+│   ├── data/trimmed/                  # Trim Galore QC reports
+│   ├── logs/                          # HISAT2 per-sample alignment logs
+│   ├── reference/                     # Genome/annotation (.gitignored — see below)
+│   └── Results/
+│       ├── Alignments/                # Sorted BAM index files
+│       ├── Counts/                    # Raw and cleaned featureCounts matrices
+│       └── fastqc/                    # Per-sample FastQC reports
 │
-├── 02_differential_expression/ # DESeq2 differential expression
-│ ├── deg_analysis.R
-│ ├── DEG_results_all.csv
-│ ├── DEG_results_significant.csv
-│ ├── Top20_Upregulated.csv
-│ ├── Top20_Downregulated.csv
-│ ├── Volcano_plot.png
-│ └── heatmap.png
+├── 02_differential_expression/         # DESeq2 differential expression
+│   ├── deg_analysis.R
+│   ├── DEG_results_all.csv
+│   ├── DEG_results_significant.csv
+│   ├── Top20_Upregulated.csv
+│   ├── Top20_Downregulated.csv
+│   ├── Volcano_plot.png
+│   └── heatmap.png
 │
-├── 03_functional_enrichment/ # GO / KEGG enrichment (enrichR)
-│ ├── functional_enrichment.R
-│ ├── GO_BP_results.csv / GO_BP_top20.csv
-│ ├── GO_CC_results.csv / GO_MF_results.csv
-│ ├── KEGG_results.csv / KEGG_top20.csv
-│ └── GO_BP_barplot.png / GO_dotplot.png / KEGG_barplot.png / KEGG_dotplot.png
+├── 03_functional_enrichment/          # GO / KEGG enrichment (enrichR)
+│   ├── functional_enrichment.R
+│   ├── GO_BP_results.csv
+│   ├── GO_BP_top20.csv
+│   ├── GO_CC_results.csv
+│   ├── GO_MF_results.csv
+│   ├── KEGG_results.csv
+│   ├── KEGG_top20.csv
+│   ├── GO_BP_barplot.png
+│   ├── GO_dotplot.png
+│   ├── KEGG_barplot.png
+│   └── KEGG_dotplot.png
 │
-├── 04_mirna_network/ # miRDB miRNA target-network analysis
-│ └── mirna_interactions_complete.xlsx
+├── 04_mirna_network/                  # miRDB miRNA target-network analysis
+│   └── mirna_interactions_complete.xlsx
 │
-├── 05_ctcf_chipseq/ # CTCF ChIP-seq peak annotation (ChIPseeker)
-│ ├── ctcf_chipseq_annotation.R
-│ ├── CTCF_annotated_peaks.csv
-│ └── CTCF_anno_pie.pdf
+├── 05_ctcf_chipseq/                   # CTCF ChIP-seq peak annotation (ChIPseeker)
+│   ├── ctcf_chipseq_annotation.R
+│   ├── CTCF_annotated_peaks.csv
+│   └── CTCF_anno_pie.pdf
 │
-├── 06_gwas_analysis/ # GWAS summary-statistics reanalysis
-│ ├── gwas_analysis.Rmd / gwas_analysis.html
-│ ├── GWAS_all_cleaned.csv
-│ ├── GWAS_GW_significant_SNPs.csv
-│ ├── GWAS_suggestive_SNPs.csv
-│ ├── GWAS_chromosome_summary.csv
-│ └── Manhattan_Plot.png / QQ_Plot.png / PCA_Plot.png
+├── 06_gwas_analysis/                  # GWAS summary-statistics reanalysis
+│   ├── gwas_analysis.Rmd
+│   ├── gwas_analysis.html
+│   ├── GWAS_all_cleaned.csv
+│   ├── GWAS_GW_significant_SNPs.csv
+│   ├── GWAS_suggestive_SNPs.csv
+│   ├── GWAS_chromosome_summary.csv
+│   ├── Manhattan_Plot.png
+│   ├── QQ_Plot.png
+│   └── PCA_Plot.png
 │
-└── 07_multiomics_integration/ # Cross-layer integration and candidate gene scoring
-├── multiomics_integration.Rmd / multiomics_integration.html
-├── Candidate_Genes.csv
-├── Triple_Overlap_Candidates.csv
-├── GWAS_Locus_Genes.csv
-├── Integrated_Evidence_Table.csv
-├── hypergeometric_results.rds
-├── Candidate_Highlight_Plot.png
-├── Evidence_Heatmap.png
-├── GWAS_ChIPseq_Overlap.png
-├── eQTL_Workflow_Diagram.png
-└── Venn_Diagram.png
-
-
+└── 07_multiomics_integration/         # Cross-layer integration and candidate gene scoring
+    ├── multiomics_integration.Rmd
+    ├── multiomics_integration.html
+    ├── Candidate_Genes.csv
+    ├── Triple_Overlap_Candidates.csv
+    ├── GWAS_Locus_Genes.csv
+    ├── Integrated_Evidence_Table.csv
+    ├── hypergeometric_results.rds
+    ├── Candidate_Highlight_Plot.png
+    ├── Evidence_Heatmap.png
+    ├── GWAS_ChIPseq_Overlap.png
+    ├── eQTL_Workflow_Diagram.png
+    └── Venn_Diagram.png
+```
 **Note:** raw `.fastq.gz`, `.bam`, and reference genome/annotation files are not tracked in this repository due to size (~50 GB). All raw sequencing data is retrieved automatically by `01_rnaseq_processing/1_download_and_merge.sh`; the reference genome index is retrieved by `2_reference_and_index.sh`.
 
 ## Dataset
